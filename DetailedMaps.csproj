@@ -13,12 +13,6 @@
 		<ModsPath>$(TheLongDarkPath)\Mods</ModsPath>
 	</PropertyGroup>
 
-	<ItemGroup>
-		<Compile Remove="Unity\**" />
-		<EmbeddedResource Remove="Unity\**" />
-		<None Remove="Unity\**" />
-	</ItemGroup>
-
 	<!-- Map PNGs ship as sidecar zips (DetailedMaps.Charcoal.zip / DetailedMaps.Color.zip), not embedded. -->
 	<ItemGroup>
 		<None Include="Maps\**\*" />
