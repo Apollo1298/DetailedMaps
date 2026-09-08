@@ -4,7 +4,7 @@ This is a visual mod for **The Long Dark** by Hinterland Studios
 
 Detailed Maps replaces the existing charcoal region maps in game with more detailed ones in order to make mapping a better use of time in-game and make navigation a bit easier. No more need to look up maps online!
 
-Maps are based on [Topographic Maps](https://steamcommunity.com/sharedfiles/filedetails/?id=1142193220) by delta. Charcoal is a filtered stylized set; Color is the full topographic set.
+The map art is inspired by [Topographic Maps](https://steamcommunity.com/sharedfiles/filedetails/?id=1142193220) by delta, but the maps in this mod are generated separately. Two styles ship with the mod: **Charcoal** (stylized) and **Color** (full topographic look).
 
 ## Installation
 
@@ -28,4 +28,4 @@ Charcoal/color PNGs live in `Maps\` (`*_new.png` / `*_color.png`). The script zi
 
 ## Special Thanks
 
-Thanks to DigitalZombie and Fuar for providing guidance (and letting me directly copy their code in Fuar's case), enabling me to make this mod!
+From the original Detailed Maps author (CaptainThorne): thanks to DigitalZombie and Fuar for providing guidance (and letting them directly copy Fuar's code), enabling the original mod.
