@@ -1,0 +1,6 @@
+# Generated map packs (rebuild with build-map-packs.ps1)
+DetailedMaps.Charcoal.zip
+DetailedMaps.Color.zip
+
+bin/
+obj/
