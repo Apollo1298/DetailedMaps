@@ -33,8 +33,8 @@ using MelonLoader;
 // You can specify all the values or you can default the Build and Revision Numbers
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("1.3.1.0")]
-[assembly: AssemblyFileVersion("1.3.1.0")]
-[assembly: MelonInfo(typeof(DetailedMaps.Implementation), "DetailedMaps", "1.3.1", "CaptainThorne")]
+[assembly: AssemblyVersion("1.3.2.0")]
+[assembly: AssemblyFileVersion("1.3.2.0")]
+[assembly: MelonInfo(typeof(DetailedMaps.Implementation), "DetailedMaps", "1.3.2", "CaptainThorne")]
 [assembly: MelonGame("Hinterland", "TheLongDark")]
 [assembly: MelonAdditionalDependencies("ModSettings")]

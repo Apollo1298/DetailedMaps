@@ -20,6 +20,16 @@ namespace DetailedMaps
         private static readonly Dictionary<string, string> entryByAssetName = new(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, string> zipByAssetName = new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Vanilla FogOfWar background filenames that do not match scene / pack asset names.
+        /// </summary>
+        private static readonly Dictionary<string, string> backgroundNameAliases = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["map_bg_AshCanyon"] = "map_bg_AshCanyonRegion",
+            ["map_bg_MountainTownRegionSandbox"] = "map_bg_MountainTownRegion",
+            ["map_bg_DamRiverTransitionZone"] = "map_bg_DamRiverTransitionZoneB",
+        };
+
         // Managed Dictionary does NOT keep Il2Cpp objects alive. This list does.
         private static readonly Il2CppObjectList textureRoots = new();
 
@@ -73,6 +83,11 @@ namespace DetailedMaps
             if (string.IsNullOrEmpty(vanillaFilename))
             {
                 return false;
+            }
+
+            if (backgroundNameAliases.TryGetValue(vanillaFilename, out string? packBaseName))
+            {
+                vanillaFilename = packBaseName;
             }
 
             string suffix = Settings.Instance.MapStyle == 1 ? "_color" : "_new";
