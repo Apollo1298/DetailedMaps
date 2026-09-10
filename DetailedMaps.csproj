@@ -13,7 +13,16 @@
 		<ModsPath>$(TheLongDarkPath)\Mods</ModsPath>
 	</PropertyGroup>
 
-	<!-- Map PNGs ship as sidecar zips (DetailedMaps.Charcoal.zip / DetailedMaps.Color.zip), not embedded. -->
+	<ItemGroup>
+		<Compile Remove="Unity\**" />
+		<Compile Remove="PocLayered\**" />
+		<EmbeddedResource Remove="Unity\**" />
+		<EmbeddedResource Remove="PocLayered\**" />
+		<None Remove="Unity\**" />
+		<None Remove="PocLayered\**" />
+	</ItemGroup>
+
+	<!-- Map art ships as sidecar AssetBundles (preferred) or PNG zips (fallback), not embedded. -->
 	<ItemGroup>
 		<None Include="Maps\**\*" />
 	</ItemGroup>

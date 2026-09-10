@@ -1,8 +1,18 @@
-# Generated map packs (rebuild with build-map-packs.ps1)
+# Legacy PNG zip packs (unsupported)
 DetailedMaps.Charcoal.zip
 DetailedMaps.Color.zip
+
+# BC7 AssetBundle / release pack outputs
+out/
 
 bin/
 obj/
 .cursor/
 tools/
+
+# Obsolete layered POC (removed from tree; keep ignore if recreated)
+PocLayered/
+
+# Unity local build logs
+Unity/*.log
+Unity/build-assetbundle.log

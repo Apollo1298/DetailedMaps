@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
+using Il2Cpp;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using MelonLoader;
 using UnityEngine;
 using Il2CppObjectList = Il2CppSystem.Collections.Generic.List<UnityEngine.Object>;
@@ -12,17 +14,13 @@ namespace DetailedMaps
 {
     public class Implementation : MelonMod
     {
-        private const string CharcoalZipFileName = "DetailedMaps.Charcoal.zip";
-        private const string ColorZipFileName = "DetailedMaps.Color.zip";
+        private const string PackZipFileName = "DetailedMaps.zip";
+        private const string RecipeBundleFileName = "DetailedMaps.Recipe.bundle";
         private const string BlankDetailsName = "map_details_blank";
+        private const string BaseSuffix = "_base";
 
-        private static readonly Dictionary<string, Texture2D> textures = new(StringComparer.OrdinalIgnoreCase);
-        private static readonly Dictionary<string, string> entryByAssetName = new(StringComparer.OrdinalIgnoreCase);
-        private static readonly Dictionary<string, string> zipByAssetName = new(StringComparer.OrdinalIgnoreCase);
-
-        /// <summary>
-        /// Vanilla FogOfWar background filenames that do not match scene / pack asset names.
-        /// </summary>
+        private static readonly Dictionary<string, string> zipEntryByAssetName = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, AssetBundle> loadedBundles = new(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, string> backgroundNameAliases = new(StringComparer.OrdinalIgnoreCase)
         {
             ["map_bg_AshCanyon"] = "map_bg_AshCanyonRegion",
@@ -30,13 +28,14 @@ namespace DetailedMaps
             ["map_bg_DamRiverTransitionZone"] = "map_bg_DamRiverTransitionZoneB",
         };
 
-        // Managed Dictionary does NOT keep Il2Cpp objects alive. This list does.
-        private static readonly Il2CppObjectList textureRoots = new();
+        private static readonly Il2CppObjectList roots = new();
 
         private static string? packDirectory;
-        private static string? charcoalZipPath;
-        private static string? colorZipPath;
-        private static string? currentRegionMapName;
+        private static string? packZipPath;
+        private static Texture2D? blankTexture;
+        private static Texture2D? bakedTexture;
+        private static string? bakedKey;
+        private static AssetBundle? recipeBundle;
 
         public override void OnInitializeMelon()
         {
@@ -45,39 +44,72 @@ namespace DetailedMaps
             try
             {
                 Settings.Instance.AddToModSettings("Detailed Maps");
-                IndexMapPacks();
-
-                if (!TryGetOrLoadTexture(BlankDetailsName, out _))
+                packDirectory = ResolvePackDirectory();
+                packZipPath = FindPack(PackZipFileName);
+                if (packZipPath == null)
                 {
-                    MelonLogger.Warning($"Optional '{BlankDetailsName}' not found in charcoal pack; charcoal details overlay will not be blanked.");
+                    throw new FileNotFoundException(
+                        $"Missing '{PackZipFileName}' next to the DLL or in Mods/DetailedMaps/. " +
+                        "Old charcoal/color PNG zips and loose *.bundle files are unsupported.");
                 }
 
-                MelonLogger.Msg($"{entryByAssetName.Count} map entries indexed (on-demand load from zip packs).");
+                IndexPackZip(packZipPath);
+                MelonLogger.Msg($"Pack: {packZipPath} ({zipEntryByAssetName.Count} bundle entries).");
+
+                if (!TryLoadRecipeShader())
+                {
+                    MelonLogger.Error($"Missing '{RecipeBundleFileName}' inside '{PackZipFileName}'.");
+                }
+
+                if (!TryGetBlankDetails(out _))
+                {
+                    MelonLogger.Warning($"Optional '{BlankDetailsName}' not in pack; details overlay may show vanilla.");
+                }
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"Failed to index map packs: {ex}");
+                MelonLogger.Error($"Failed to initialize map pack: {ex}");
             }
         }
 
-        internal static void OnMapStyleChanged()
+        internal static void OnSettingsChanged()
         {
-            string style = Settings.Instance.MapStyle == 1 ? "Color" : "Charcoal";
-            MelonLogger.Msg($"Map style set to {style}.");
-
-            if (string.IsNullOrEmpty(currentRegionMapName))
-            {
-                return;
-            }
-
-            UnloadRegionMap(currentRegionMapName);
-            currentRegionMapName = null;
+            MelonLogger.Msg(
+                $"Settings: style={(Settings.Instance.MapStyle == 0 ? "Charcoal" : "Color")} " +
+                $"grid={Settings.Instance.Grid} noise={Settings.Instance.Noise}");
+            InvalidateBake();
+            TryRebakeOpenMaps();
         }
 
-        /// <summary>
-        /// Loads the background for a vanilla FogOfWar filename using the selected map style.
-        /// </summary>
-        internal static bool TryGetOrLoadBackground(string vanillaFilename, out Texture2D texture)
+        internal static bool TryGetBlankDetails(out Texture2D texture)
+        {
+            texture = null!;
+            if (blankTexture != null)
+            {
+                texture = blankTexture;
+                return true;
+            }
+
+            if (!zipEntryByAssetName.ContainsKey(BlankDetailsName))
+            {
+                return false;
+            }
+
+            try
+            {
+                blankTexture = LoadTextureFromPackBundle(BlankDetailsName);
+                roots.Add(blankTexture);
+                texture = blankTexture;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"Failed to load blank details: {ex}");
+                return false;
+            }
+        }
+
+        internal static bool TryGetOrBakeBackground(string vanillaFilename, float sceneRadius, out Texture2D texture)
         {
             texture = null!;
             if (string.IsNullOrEmpty(vanillaFilename))
@@ -85,219 +117,341 @@ namespace DetailedMaps
                 return false;
             }
 
-            if (backgroundNameAliases.TryGetValue(vanillaFilename, out string? packBaseName))
-            {
-                vanillaFilename = packBaseName;
-            }
-
-            string suffix = Settings.Instance.MapStyle == 1 ? "_color" : "_new";
-            return TryGetOrLoadTexture(vanillaFilename + suffix, out texture);
-        }
-
-        /// <summary>
-        /// Returns a cached texture or loads it from a zip pack entry.
-        /// Region backgrounds unload the previous region map to limit VRAM.
-        /// </summary>
-        internal static bool TryGetOrLoadTexture(string name, out Texture2D texture)
-        {
-            texture = null!;
-
-            if (string.IsNullOrEmpty(name))
+            if (!vanillaFilename.StartsWith("map_bg_", StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }
 
-            if (textures.TryGetValue(name, out Texture2D? cached) && cached != null)
+            string regionKey = ResolveRegionKey(vanillaFilename);
+            string baseAsset = regionKey + BaseSuffix;
+            if (!zipEntryByAssetName.ContainsKey(baseAsset))
             {
-                texture = cached;
+                MelonLogger.Warning($"No base bundle '{baseAsset}' in '{PackZipFileName}' for '{vanillaFilename}'.");
+                return false;
+            }
+
+            float radius = sceneRadius > 1f ? sceneRadius : MapRecipe.LastSceneRadius;
+            string key = BakeCacheKey(baseAsset, radius);
+            if (bakedTexture != null && bakedKey == key)
+            {
+                texture = bakedTexture;
                 return true;
             }
 
-            if (!entryByAssetName.TryGetValue(name, out string? entryName) ||
-                !zipByAssetName.TryGetValue(name, out string? zipPath))
+            if (!MapRecipe.HasShader && !TryLoadRecipeShader())
             {
-                if (name.EndsWith("_color", StringComparison.OrdinalIgnoreCase) && colorZipPath == null)
-                {
-                    MelonLogger.Warning($"Color map '{name}' requested but '{ColorZipFileName}' was not found next to the DLL.");
-                }
-
+                MelonLogger.Error("Cannot bake: recipe shader missing.");
                 return false;
             }
 
             try
             {
-                Texture2D loaded = LoadPngFromZip(zipPath, entryName, name);
-                RegisterTexture(name, loaded);
-
-                if (IsRegionBackground(name))
+                Texture2D baseTex = LoadTextureFromPackBundle(baseAsset);
+                try
                 {
-                    UnloadPreviousRegionMap(name);
-                    currentRegionMapName = name;
+                    InvalidateBake();
+                    bakedTexture = MapRecipe.Bake(baseTex, Settings.Instance, radius);
+                    bakedKey = BakeCacheKey(baseAsset, MapRecipe.LastSceneRadius);
+                    roots.Add(bakedTexture);
+                    texture = bakedTexture;
+                    return true;
                 }
-
-                texture = loaded;
-                return true;
+                finally
+                {
+                    UnloadPackBundle(baseAsset);
+                }
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"Failed to load map texture '{name}': {ex}");
+                MelonLogger.Error($"Failed to bake '{baseAsset}': {ex}");
                 return false;
             }
         }
 
-        private static void IndexMapPacks()
+        private static string ResolveRegionKey(string vanillaFilename)
         {
-            entryByAssetName.Clear();
-            zipByAssetName.Clear();
-
-            packDirectory = ResolvePackDirectory();
-            charcoalZipPath = FindPack(CharcoalZipFileName);
-            colorZipPath = FindPack(ColorZipFileName);
-
-            if (charcoalZipPath == null)
+            if (backgroundNameAliases.TryGetValue(vanillaFilename, out string? aliased))
             {
-                throw new FileNotFoundException(
-                    $"Required map pack '{CharcoalZipFileName}' not found next to the DLL or in Mods/DetailedMaps/.");
+                vanillaFilename = aliased;
             }
 
-            IndexZip(charcoalZipPath);
-            MelonLogger.Msg($"Charcoal pack: {charcoalZipPath}");
+            if (vanillaFilename.EndsWith(BaseSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return vanillaFilename[..^BaseSuffix.Length];
+            }
 
-            if (colorZipPath != null)
+            if (vanillaFilename.EndsWith("_new", StringComparison.OrdinalIgnoreCase) ||
+                vanillaFilename.EndsWith("_color", StringComparison.OrdinalIgnoreCase))
             {
-                IndexZip(colorZipPath);
-                MelonLogger.Msg($"Color pack: {colorZipPath}");
+                int cut = vanillaFilename.LastIndexOf('_');
+                return vanillaFilename[..cut];
             }
-            else
+
+            return vanillaFilename;
+        }
+
+        private static string BakeCacheKey(string baseAsset, float sceneRadius)
+        {
+            Settings s = Settings.Instance;
+            return $"{baseAsset}|{s.MapStyle}|{s.Grid}|{s.Noise}|r={sceneRadius:F1}";
+        }
+
+        private static void InvalidateBake()
+        {
+            if (bakedTexture != null)
             {
-                MelonLogger.Msg($"Color pack '{ColorZipFileName}' not found (Color style unavailable until installed).");
+                roots.Remove(bakedTexture);
+                UnityEngine.Object.Destroy(bakedTexture);
+                bakedTexture = null;
             }
+
+            bakedKey = null;
+        }
+
+        private static void TryRebakeOpenMaps()
+        {
+            try
+            {
+                FogOfWar[]? maps = UnityEngine.Object.FindObjectsOfType<FogOfWar>();
+                if (maps == null)
+                {
+                    return;
+                }
+
+                foreach (FogOfWar fow in maps)
+                {
+                    if (fow == null)
+                    {
+                        continue;
+                    }
+
+                    string bgFile = fow.m_MapBackgroundFilename;
+                    if (string.IsNullOrEmpty(bgFile) ||
+                        !bgFile.StartsWith("map_bg_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (TryGetOrBakeBackground(bgFile, fow.m_SceneRadius, out Texture2D bg))
+                    {
+                        fow.m_MapBackground = bg;
+                        fow.m_Redraw = true;
+                        MelonLogger.Msg($"Rebaked open FOW '{bgFile}' sceneR={fow.m_SceneRadius:F1}.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"Rebake open maps failed: {ex}");
+            }
+        }
+
+        private static void IndexPackZip(string zipPath)
+        {
+            zipEntryByAssetName.Clear();
+            using ZipArchive zip = ZipFile.OpenRead(zipPath);
+            foreach (ZipArchiveEntry entry in zip.Entries)
+            {
+                if (string.IsNullOrEmpty(entry.Name) ||
+                    !entry.Name.EndsWith(".bundle", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string assetName = Path.GetFileNameWithoutExtension(entry.Name);
+                zipEntryByAssetName[assetName] = entry.FullName;
+            }
+
+            if (zipEntryByAssetName.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    $"'{zipPath}' has no .bundle entries. Expected per-region map_bg_*_base.bundle files.");
+            }
+        }
+
+        private static bool TryLoadRecipeShader()
+        {
+            if (MapRecipe.HasShader)
+            {
+                return true;
+            }
+
+            const string recipeKey = "DetailedMaps.Recipe";
+            if (packZipPath == null || !zipEntryByAssetName.ContainsKey(recipeKey))
+            {
+                return false;
+            }
+
+            try
+            {
+                byte[] bytes = ReadZipEntryBytes(recipeKey);
+                recipeBundle = Unity6AssetBundleLoader.LoadFromMemory(bytes);
+                if (recipeBundle == null)
+                {
+                    MelonLogger.Error("Failed to LoadFromMemory recipe bundle.");
+                    return false;
+                }
+
+                roots.Add(recipeBundle);
+                string[] names = ToManagedStrings(recipeBundle.GetAllAssetNames());
+                Shader? shader = null;
+                foreach (string name in names)
+                {
+                    UnityEngine.Object obj = recipeBundle.LoadAsset(name);
+                    shader = obj.TryCast<Shader>();
+                    if (shader != null)
+                    {
+                        break;
+                    }
+                }
+
+                if (shader == null)
+                {
+                    MelonLogger.Error($"No Shader in recipe bundle. Assets: {string.Join(", ", names)}");
+                    return false;
+                }
+
+                MapRecipe.SetRecipeShader(shader);
+                roots.Add(shader);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"Recipe shader load failed: {ex}");
+                return false;
+            }
+        }
+
+        private static Texture2D LoadTextureFromPackBundle(string assetName)
+        {
+            if (!loadedBundles.TryGetValue(assetName, out AssetBundle? bundle) || bundle == null)
+            {
+                byte[] bytes = ReadZipEntryBytes(assetName);
+                Stopwatch openSw = Stopwatch.StartNew();
+                bundle = Unity6AssetBundleLoader.LoadFromMemory(bytes);
+                openSw.Stop();
+                if (bundle == null)
+                {
+                    throw new InvalidOperationException(
+                        $"LoadFromMemory null for '{assetName}' ({bytes.Length} bytes).");
+                }
+
+                loadedBundles[assetName] = bundle;
+                roots.Add(bundle);
+                MelonLogger.Msg(
+                    $"Opened pack bundle '{assetName}' ({bytes.Length / 1024} KB) in {openSw.ElapsedMilliseconds} ms.");
+            }
+
+            string[] assetPaths = ToManagedStrings(bundle.GetAllAssetNames());
+            if (assetPaths.Length == 0)
+            {
+                throw new InvalidOperationException($"Bundle '{assetName}' contains no assets.");
+            }
+
+            string loadPath = assetPaths[0];
+            foreach (string p in assetPaths)
+            {
+                if (string.Equals(Path.GetFileNameWithoutExtension(p), assetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    loadPath = p;
+                    break;
+                }
+            }
+
+            Stopwatch sw = Stopwatch.StartNew();
+            UnityEngine.Object obj = bundle.LoadAsset(loadPath);
+            Texture2D? tex = obj == null ? null : obj.TryCast<Texture2D>();
+            sw.Stop();
+            if (tex == null)
+            {
+                throw new InvalidOperationException($"LoadAsset did not return Texture2D for '{assetName}'.");
+            }
+
+            tex.hideFlags = HideFlags.HideAndDontSave;
+            MelonLogger.Msg(
+                $"Loaded '{assetName}' ({tex.width}x{tex.height}, {tex.format}) in {sw.ElapsedMilliseconds} ms.");
+            return tex;
+        }
+
+        private static void UnloadPackBundle(string assetName)
+        {
+            if (loadedBundles.TryGetValue(assetName, out AssetBundle? bundle) && bundle != null)
+            {
+                loadedBundles.Remove(assetName);
+                roots.Remove(bundle);
+                bundle.Unload(true);
+                MelonLogger.Msg($"Unloaded pack bundle '{assetName}'.");
+            }
+        }
+
+        private static byte[] ReadZipEntryBytes(string assetName)
+        {
+            if (packZipPath == null || !zipEntryByAssetName.TryGetValue(assetName, out string? entryFullName))
+            {
+                throw new FileNotFoundException($"Pack entry not indexed: '{assetName}'");
+            }
+
+            using ZipArchive zip = ZipFile.OpenRead(packZipPath);
+            ZipArchiveEntry? entry = zip.GetEntry(entryFullName);
+            if (entry == null)
+            {
+                throw new FileNotFoundException($"Zip entry missing: {entryFullName} in {packZipPath}");
+            }
+
+            using Stream stream = entry.Open();
+            using MemoryStream ms = new MemoryStream(entry.Length > 0 ? (int)entry.Length : 0);
+            stream.CopyTo(ms);
+            return ms.ToArray();
         }
 
         private static string ResolvePackDirectory()
         {
             string? asmDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            if (!string.IsNullOrEmpty(asmDir))
-            {
-                return asmDir;
-            }
-
-            return MelonLoader.Utils.MelonEnvironment.ModsDirectory;
+            return !string.IsNullOrEmpty(asmDir)
+                ? asmDir
+                : MelonLoader.Utils.MelonEnvironment.ModsDirectory;
         }
 
         private static string? FindPack(string fileName)
         {
-            if (string.IsNullOrEmpty(packDirectory))
+            foreach (string dir in GetPackSearchDirs())
             {
-                return null;
-            }
-
-            string besideDll = Path.Combine(packDirectory, fileName);
-            if (File.Exists(besideDll))
-            {
-                return besideDll;
-            }
-
-            string subfolder = Path.Combine(packDirectory, "DetailedMaps", fileName);
-            if (File.Exists(subfolder))
-            {
-                return subfolder;
-            }
-
-            string modsDir = MelonLoader.Utils.MelonEnvironment.ModsDirectory;
-            string inMods = Path.Combine(modsDir, fileName);
-            if (File.Exists(inMods))
-            {
-                return inMods;
-            }
-
-            string inModsSub = Path.Combine(modsDir, "DetailedMaps", fileName);
-            if (File.Exists(inModsSub))
-            {
-                return inModsSub;
+                string path = Path.Combine(dir, fileName);
+                if (File.Exists(path))
+                {
+                    return path;
+                }
             }
 
             return null;
         }
 
-        private static void IndexZip(string zipPath)
+        private static IEnumerable<string> GetPackSearchDirs()
         {
-            using ZipArchive zip = ZipFile.OpenRead(zipPath);
-            foreach (ZipArchiveEntry entry in zip.Entries)
+            if (!string.IsNullOrEmpty(packDirectory))
             {
-                if (string.IsNullOrEmpty(entry.Name) ||
-                    !entry.Name.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
+                yield return packDirectory;
+                yield return Path.Combine(packDirectory, "DetailedMaps");
+            }
 
-                // Prefer the file name only so nested zip paths still work.
-                string assetName = Path.GetFileNameWithoutExtension(entry.Name);
-                entryByAssetName[assetName] = entry.FullName;
-                zipByAssetName[assetName] = zipPath;
+            string modsDir = MelonLoader.Utils.MelonEnvironment.ModsDirectory;
+            if (!string.IsNullOrEmpty(modsDir) &&
+                !string.Equals(modsDir, packDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return modsDir;
+                yield return Path.Combine(modsDir, "DetailedMaps");
             }
         }
 
-        private static Texture2D LoadPngFromZip(string zipPath, string entryFullName, string assetName)
+        private static string[] ToManagedStrings(Il2CppStringArray array)
         {
-            using ZipArchive zip = ZipFile.OpenRead(zipPath);
-            ZipArchiveEntry? entry = zip.GetEntry(entryFullName);
-            if (entry == null)
+            string[] result = new string[array.Length];
+            for (int i = 0; i < array.Length; i++)
             {
-                throw new FileNotFoundException($"Zip entry missing: {entryFullName} in {zipPath}");
+                result[i] = array[i];
             }
 
-            byte[] pngBytes;
-            using (Stream stream = entry.Open())
-            using (MemoryStream ms = new MemoryStream((int)entry.Length))
-            {
-                stream.CopyTo(ms);
-                pngBytes = ms.ToArray();
-            }
-
-            Stopwatch sw = Stopwatch.StartNew();
-            Texture2D tex = Unity6ImageLoader.LoadPng(pngBytes, assetName);
-            sw.Stop();
-
-            tex.hideFlags = HideFlags.HideAndDontSave;
-            MelonLogger.Msg($"Loaded map texture '{assetName}' ({tex.width}x{tex.height}) in {sw.ElapsedMilliseconds} ms.");
-            return tex;
-        }
-
-        private static void RegisterTexture(string name, Texture2D tex)
-        {
-            textures[name] = tex;
-            textureRoots.Add(tex);
-        }
-
-        private static bool IsRegionBackground(string name)
-        {
-            return name.StartsWith("map_bg_", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static void UnloadPreviousRegionMap(string newName)
-        {
-            if (string.IsNullOrEmpty(currentRegionMapName) ||
-                string.Equals(currentRegionMapName, newName, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            UnloadRegionMap(currentRegionMapName);
-        }
-
-        private static void UnloadRegionMap(string name)
-        {
-            if (!textures.TryGetValue(name, out Texture2D? oldTex) || oldTex == null)
-            {
-                textures.Remove(name);
-                return;
-            }
-
-            textures.Remove(name);
-            textureRoots.Remove(oldTex);
-            UnityEngine.Object.Destroy(oldTex);
-            MelonLogger.Msg($"Unloaded previous map texture '{name}'.");
+            return result;
         }
     }
 }

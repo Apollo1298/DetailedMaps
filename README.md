@@ -1,10 +1,8 @@
 # Detailed Maps
 
-This is a visual mod for **The Long Dark** by Hinterland Studios
+Visual mod for **The Long Dark** — replaces charcoal FOW region maps with detailed generated art.
 
-Detailed Maps replaces the existing charcoal region maps in game with more detailed ones in order to make mapping a better use of time in-game and make navigation a bit easier. No more need to look up maps online!
-
-The map art is inspired by [Topographic Maps](https://steamcommunity.com/sharedfiles/filedetails/?id=1142193220) by delta, but the maps in this mod are generated separately. Every region now has a replacement. Two styles ship with the mod: **Charcoal** and **Color**
+**Charcoal** vs **Color**, optional **100 m grid** and **noise**, from one BC7 base per region (levels/color balance prebaked). Vignette is always applied.
 
 ## Installation
 
@@ -12,20 +10,33 @@ The map art is inspired by [Topographic Maps](https://steamcommunity.com/sharedf
 2. Install [ModSettings](https://github.com/zeobviouslyfakeacc/ModSettings/releases) into `Mods\`.
 3. Copy into `Mods\`:
    - `DetailedMaps.dll`
-   - `DetailedMaps.Charcoal.zip` (required)
-   - `DetailedMaps.Color.zip` (optional — needed for Color style)
-4. In Options → Mod Settings → **Detailed Maps**, choose **Charcoal** or **Color**.
+   - `DetailedMaps.zip` (from `out\DetailedMaps.zip` after a release pack build)
+4. Remove any old packs: `DetailedMaps.Charcoal.zip`, `DetailedMaps.Color.zip`, loose `map_bg_*_new.bundle` / `*_color.bundle`, and `DetailedMaps.LayeredPoc.*`.
+5. Options → Mod Settings → **Detailed Maps**: Map Style, Grid, Noise.
 
-## Building map packs
+## Building the release pack
 
-From the repo root:
+Requires Unity **6000.0.60f1** (TLD). Base PNGs come from TerrainDumper `out\maps_base` (`map_bg_*_new.png`, renamed to `*_base` for packaging).
 
 ```powershell
-.\build-map-packs.ps1 -Deploy
+.\build-release-pack.ps1
 ```
 
-Charcoal/color PNGs live in `Maps\` (`*_new.png` / `*_color.png`). The script zips them into the sidecar packs.
+That syncs bases → `Maps\*_base.png`, builds per-region BC7 bundles + recipe shader, and writes `out\DetailedMaps.zip`.
+
+Or step-by-step:
+
+```powershell
+.\build-assetbundle.ps1 -Pack base
+.\build-assetbundle.ps1 -Pack recipe
+.\build-assetbundle.ps1 -Pack packzip
+```
+
+## Repo notes
+
+- Source art in `Maps\` is `map_bg_*_base.png` (+ `map_details_blank.png`). Release pack is `out\DetailedMaps.zip` (gitignored).
+- Rebuild with `.\build-release-pack.ps1` (Unity 6000.0.60f1).
 
 ## Special Thanks
 
-From the original Detailed Maps author (CaptainThorne): thanks to DigitalZombie and Fuar for providing guidance (and letting them directly copy Fuar's code), enabling the original mod.
+From the original Detailed Maps author (CaptainThorne): thanks to DigitalZombie and Fuar for guidance (and allowing direct use of Fuar's code).
