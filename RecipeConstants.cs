@@ -19,5 +19,8 @@ namespace DetailedMaps
         public const float StippleDensity = 0.012f;
         public const float StippleStrength = 55.0f;
         public const float GrainSigma = 36.0f;
+
+        /// <summary>Longest edge for the in-game map texture (bases may be larger).</summary>
+        public const int DisplayMaxEdge = 3072;
     }
 }

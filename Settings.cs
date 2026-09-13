@@ -9,7 +9,7 @@ namespace DetailedMaps
         [Name("Map Style")]
         [Description(
             "Charcoal (full desat) or Color (chroma keep 0.80). " +
-            "Levels and color balance are prebaked into the base maps.")]
+            "Levels and color balance are already in the base maps.")]
         [Choice("Charcoal", "Color")]
         public int MapStyle = 0;
 

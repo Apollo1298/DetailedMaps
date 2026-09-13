@@ -20,7 +20,6 @@ namespace DetailedMaps
                 if (Implementation.TryGetOrBakeBackground(filename, __instance.m_SceneRadius, out Texture2D replacement))
                 {
                     texture = replacement;
-                    MelonLogger.Msg($"Replaced background '{filename}' with layered bake.");
                     return false;
                 }
 
@@ -28,7 +27,6 @@ namespace DetailedMaps
                     Implementation.TryGetBlankDetails(out Texture2D blank))
                 {
                     texture = blank;
-                    MelonLogger.Msg($"Replaced details '{filename}' → 'map_details_blank'");
                     return false;
                 }
 
@@ -43,21 +41,30 @@ namespace DetailedMaps
             {
                 try
                 {
+                    bool changed = false;
                     string bgFile = __instance.m_MapBackgroundFilename;
+
                     if (!string.IsNullOrEmpty(bgFile) &&
-                        Implementation.TryGetOrBakeBackground(bgFile, __instance.m_SceneRadius, out Texture2D bg))
+                        Implementation.TryGetOrBakeBackground(bgFile, __instance.m_SceneRadius, out Texture2D bg) &&
+                        !ReferenceEquals(__instance.m_MapBackground, bg))
                     {
                         __instance.m_MapBackground = bg;
+                        changed = true;
                     }
 
-                    if (Implementation.TryGetBlankDetails(out Texture2D details))
+                    if (Implementation.TryGetBlankDetails(out Texture2D details) &&
+                        !ReferenceEquals(__instance.m_MapDetails, details))
                     {
                         __instance.m_MapDetails = details;
+                        changed = true;
                     }
 
-                    __instance.m_Redraw = true;
-                    MelonLogger.Msg(
-                        $"OnEnable applied maps for '{bgFile}' sceneR={__instance.m_SceneRadius:F1}, redraw requested.");
+                    if (changed)
+                    {
+                        __instance.m_Redraw = true;
+                        MelonLogger.Msg(
+                            $"OnEnable applied maps for '{bgFile}' sceneR={__instance.m_SceneRadius:F1}, redraw requested.");
+                    }
                 }
                 catch (System.Exception ex)
                 {

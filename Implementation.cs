@@ -140,7 +140,7 @@ namespace DetailedMaps
 
             if (!MapRecipe.HasShader && !TryLoadRecipeShader())
             {
-                MelonLogger.Error("Cannot bake: recipe shader missing.");
+                MelonLogger.Error("Cannot build map texture: recipe shader missing.");
                 return false;
             }
 
@@ -163,7 +163,7 @@ namespace DetailedMaps
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"Failed to bake '{baseAsset}': {ex}");
+                MelonLogger.Error($"Failed to build map texture '{baseAsset}': {ex}");
                 return false;
             }
         }
@@ -236,13 +236,13 @@ namespace DetailedMaps
                     {
                         fow.m_MapBackground = bg;
                         fow.m_Redraw = true;
-                        MelonLogger.Msg($"Rebaked open FOW '{bgFile}' sceneR={fow.m_SceneRadius:F1}.");
+                        MelonLogger.Msg($"Updated open map '{bgFile}' sceneR={fow.m_SceneRadius:F1}.");
                     }
                 }
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"Rebake open maps failed: {ex}");
+                MelonLogger.Error($"Updating open maps failed: {ex}");
             }
         }
 
