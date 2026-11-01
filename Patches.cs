@@ -2,15 +2,17 @@
 using Il2Cpp;
 using MelonLoader;
 using UnityEngine;
+using UnityEngine.ResourceManagement.AsyncOperations;
 
 namespace DetailedMaps
 {
     internal class Patches
     {
-        [HarmonyPatch(typeof(FogOfWar), nameof(FogOfWar.MaybeLoadTextureAsset))]
-        internal class FogOfWar_MaybeLoadTextureAsset
+        // LoadTextureAsset is private; Harmony resolves by name string.
+        [HarmonyPatch(typeof(FogOfWar), "LoadTextureAsset")]
+        internal class FogOfWar_LoadTextureAsset
         {
-            private static bool Prefix(FogOfWar __instance, string filename, ref Texture2D texture)
+            private static bool Prefix(FogOfWar __instance, string filename, ref AsyncOperationHandle<Texture2D> __result)
             {
                 if (string.IsNullOrEmpty(filename))
                 {
@@ -19,14 +21,14 @@ namespace DetailedMaps
 
                 if (Implementation.TryGetOrBakeBackground(filename, __instance.m_SceneRadius, out Texture2D replacement))
                 {
-                    texture = replacement;
+                    __result = Implementation.CreateCompletedTextureHandle(replacement);
                     return false;
                 }
 
                 if (filename.StartsWith("map_details", System.StringComparison.OrdinalIgnoreCase) &&
                     Implementation.TryGetBlankDetails(out Texture2D blank))
                 {
-                    texture = blank;
+                    __result = Implementation.CreateCompletedTextureHandle(blank);
                     return false;
                 }
 
@@ -45,17 +47,15 @@ namespace DetailedMaps
                     string bgFile = __instance.m_MapBackgroundFilename;
 
                     if (!string.IsNullOrEmpty(bgFile) &&
-                        Implementation.TryGetOrBakeBackground(bgFile, __instance.m_SceneRadius, out Texture2D bg) &&
-                        !ReferenceEquals(__instance.m_MapBackground, bg))
+                        Implementation.TryGetOrBakeBackground(bgFile, __instance.m_SceneRadius, out Texture2D bg))
                     {
-                        __instance.m_MapBackground = bg;
+                        __instance.m_MapBackgroundHandle = Implementation.CreateCompletedTextureHandle(bg);
                         changed = true;
                     }
 
-                    if (Implementation.TryGetBlankDetails(out Texture2D details) &&
-                        !ReferenceEquals(__instance.m_MapDetails, details))
+                    if (Implementation.TryGetBlankDetails(out Texture2D details))
                     {
-                        __instance.m_MapDetails = details;
+                        __instance.m_MapDetailsHandle = Implementation.CreateCompletedTextureHandle(details);
                         changed = true;
                     }
 

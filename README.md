@@ -6,6 +6,8 @@ Visual mod for **The Long Dark** — replaces charcoal FOW region maps with deta
 
 ## Installation
 
+Requires **TLD 2.59+** and **MelonLoader 0.7.3+**.
+
 1. Install [MelonLoader](https://github.com/LavaGang/MelonLoader/releases).
 2. Install [ModSettings](https://github.com/zeobviouslyfakeacc/ModSettings/releases) into `Mods\`.
 3. Copy into `Mods\`:

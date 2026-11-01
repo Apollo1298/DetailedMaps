@@ -8,6 +8,8 @@ using Il2Cpp;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using MelonLoader;
 using UnityEngine;
+using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
 using Il2CppObjectList = Il2CppSystem.Collections.Generic.List<UnityEngine.Object>;
 
 namespace DetailedMaps
@@ -79,6 +81,11 @@ namespace DetailedMaps
                 $"grid={Settings.Instance.Grid} noise={Settings.Instance.Noise}");
             InvalidateBake();
             TryRebakeOpenMaps();
+        }
+
+        internal static AsyncOperationHandle<Texture2D> CreateCompletedTextureHandle(Texture2D texture)
+        {
+            return Addressables.ResourceManager.CreateCompletedOperation(texture, string.Empty);
         }
 
         internal static bool TryGetBlankDetails(out Texture2D texture)
@@ -234,7 +241,7 @@ namespace DetailedMaps
 
                     if (TryGetOrBakeBackground(bgFile, fow.m_SceneRadius, out Texture2D bg))
                     {
-                        fow.m_MapBackground = bg;
+                        fow.m_MapBackgroundHandle = CreateCompletedTextureHandle(bg);
                         fow.m_Redraw = true;
                         MelonLogger.Msg($"Updated open map '{bgFile}' sceneR={fow.m_SceneRadius:F1}.");
                     }
