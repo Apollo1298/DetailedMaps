@@ -29,7 +29,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="LavaGang.MelonLoader" Version="0.7.3" />
+		<PackageReference Include="LavaGang.MelonLoader" Version="0.7.2" />
 		<!-- 2.55 NuGet for BCL-safe refs; Assembly-CSharp swapped to local 2.59 below. -->
 		<PackageReference Include="STBlade.Modding.TLD.Il2CppAssemblies.Windows" Version="2.55.0" />
 		<PackageReference Include="STBlade.Modding.TLD.ModSettings" Version="1.9.0" />
